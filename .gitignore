@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Testing / notebooks
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ML / artifacts
+artifacts/
+mlruns/
+*.log
+*.pt
+
+# OS / editor
+.DS_Store
+.vscode/
