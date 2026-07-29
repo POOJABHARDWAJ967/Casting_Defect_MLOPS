@@ -13,6 +13,7 @@ import config
 client = TestClient(app_module.app)
 
 
+
 def _fake_image_bytes() -> bytes:
     buf = io.BytesIO()
     Image.new("L", (300, 300), color=128).save(buf, format="JPEG")

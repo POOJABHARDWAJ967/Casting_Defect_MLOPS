@@ -19,6 +19,8 @@ import config
 from src import data_prep
 from src.model import load_model
 
+import requests
+
 _state = {"model": None, "tf": None, "meta": {}}
 
 
