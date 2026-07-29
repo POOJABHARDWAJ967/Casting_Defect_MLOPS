@@ -162,7 +162,7 @@ def run() -> dict:
     drift_share = n_drifted / len(feature_psi) if feature_psi else 0.0
     statistical_drift = drift_share > config.DRIFT_SHARE_THRESHOLD
 
-    print(f"\n── Statistical Drift ──")
+    print(f"\n-- Statistical Drift --")
     for feat, val in feature_psi.items():
         flag = "DRIFTED" if val > config.PSI_THRESHOLD else "ok"
         print(f"  {feat}: PSI={val:.4f}  [{flag}]")
@@ -176,9 +176,9 @@ def run() -> dict:
         report = Report(metrics=[DataDriftPreset()])
         report.run(reference_data=ref_features_df, current_data=cur_features_df)
         report.save_html(str(config.ARTIFACT_DIR / "drift_report.html"))
-        print("  ✓ Evidently drift_report.html saved")
+        print("  [OK] Evidently drift_report.html saved")
     except Exception as e:
-        print(f"  ⚠ Evidently report failed: {e}")
+        print(f"  [WARN] Evidently report failed: {e}")
 
     # ── 2. Embedding drift: distance-to-centroid PSI ────────────────────────
     ref_centroid = ref_embeddings.mean(axis=0)
@@ -187,7 +187,7 @@ def run() -> dict:
     embedding_psi_val = psi(ref_distances, cur_distances)
     embedding_drift = embedding_psi_val > config.EMBEDDING_DRIFT_THRESHOLD
 
-    print(f"\n── Embedding Drift ──")
+    print(f"\n-- Embedding Drift --")
     print(f"  Distance-to-centroid PSI: {embedding_psi_val:.4f}  "
           f"(threshold={config.EMBEDDING_DRIFT_THRESHOLD})")
     print(f"  Embedding drift: {embedding_drift}")
@@ -198,7 +198,7 @@ def run() -> dict:
     conf_drop = ref_conf_mean - cur_conf_mean
     confidence_drift = conf_drop > config.CONFIDENCE_DROP_THRESHOLD
 
-    print(f"\n── Confidence Drift ──")
+    print(f"\n-- Confidence Drift --")
     print(f"  Reference mean confidence: {ref_conf_mean:.4f}")
     print(f"  Current mean confidence:   {cur_conf_mean:.4f}")
     print(f"  Drop: {conf_drop:.4f}  (threshold={config.CONFIDENCE_DROP_THRESHOLD})")
@@ -230,8 +230,8 @@ def run() -> dict:
     }
 
     (config.ARTIFACT_DIR / "drift_summary.json").write_text(json.dumps(summary, indent=2))
-    print(f"\n{'⚠ RETRAIN RECOMMENDED' if retrain_recommended else '✓ No retrain needed'}")
-    print("✓ drift_summary.json saved")
+    print(f"\n{'[WARN] RETRAIN RECOMMENDED' if retrain_recommended else '[OK] No retrain needed'}")
+    print("[OK] drift_summary.json saved")
 
     return summary
 

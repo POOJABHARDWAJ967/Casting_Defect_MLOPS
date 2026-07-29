@@ -119,7 +119,7 @@ def main() -> int:
 
     total_params = sum(p.numel() for p in net.parameters())
     train_params = sum(p.numel() for p in trainable)
-    print(f"Parameters — total: {total_params:,}  trainable: {train_params:,}")
+    print(f"Parameters -- total: {total_params:,}  trainable: {train_params:,}")
 
     # ── MLflow ──────────────────────────────────────────────────────────────
     mlflow.set_tracking_uri(config.MLFLOW_TRACKING_URI)
@@ -248,12 +248,12 @@ def main() -> int:
         )
         model_meta["version"] = mv.version
         config.MODEL_META_PATH.write_text(json.dumps(model_meta, indent=2))
-        print(f"\n✓ Registered {config.REGISTERED_MODEL} v{mv.version} → @{config.PRODUCTION_ALIAS}")
+        print(f"\n[OK] Registered {config.REGISTERED_MODEL} v{mv.version} -> @{config.PRODUCTION_ALIAS}")
 
         # ── Reference baseline for drift monitoring ─────────────────────────
         ref_items = val_items[:200]  # clean sample for reference
         ref_info = save_reference_baseline(net, ref_items)
-        print(f"✓ Saved reference baseline ({ref_info['n_reference']} images)")
+        print(f"[OK] Saved reference baseline ({ref_info['n_reference']} images)")
 
         # Log artifacts
         if (config.ARTIFACT_DIR / "model_eval.png").exists():

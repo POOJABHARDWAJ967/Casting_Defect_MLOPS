@@ -82,7 +82,7 @@ def main() -> int:
         (config.ARTIFACT_DIR / "retraining_decision.json").write_text(
             json.dumps(decision, indent=2)
         )
-        print("✓ No retraining needed. Decision recorded.")
+        print("[OK] No retraining needed. Decision recorded.")
         return 0
 
     print("=== Drift-Triggered Retraining ===")
@@ -97,7 +97,7 @@ def main() -> int:
     train_items = _subsample(train_items, min(config.MAX_TRAIN_IMAGES, 1500))
 
     # ── Evaluate current production on a fully-drifted batch ────────────────
-    print("\n── Evaluating production model on drifted batch ──")
+    print("\n-- Evaluating production model on drifted batch --")
     prod_net = load_model()
     prod_net.to(config.DEVICE).eval()
 
@@ -111,7 +111,7 @@ def main() -> int:
     print(f"  Production F1 on drifted batch: {prod_f1:.4f}")
 
     # ── Train drift-augmented candidate ─────────────────────────────────────
-    print("\n── Training drift-augmented candidate ──")
+    print("\n-- Training drift-augmented candidate --")
     cand_net = build_model(freeze=config.FREEZE_BACKBONE).to(config.DEVICE)
     trainable = trainable_parameters(cand_net)
     optimizer = torch.optim.Adam(trainable, lr=config.LEARNING_RATE,
@@ -163,7 +163,7 @@ def main() -> int:
     cand_net.to(config.DEVICE)
 
     # ── Compare candidate vs production on drifted batch ────────────────────
-    print("\n── Comparing candidate vs production on drifted batch ──")
+    print("\n-- Comparing candidate vs production on drifted batch --")
     y_true_c, y_pred_c, y_prob_c = evaluate.predict(cand_net, drifted_loader)
     cand_metrics = evaluate.compute_metrics(y_true_c, y_pred_c, y_prob_c)
     cand_f1 = cand_metrics["f1_defect"]
@@ -177,7 +177,7 @@ def main() -> int:
 
     if cand_f1 >= prod_f1 - config.PROMOTE_EPSILON:
         action = "promote"
-        print(f"\n✓ PROMOTE: candidate ({cand_f1:.4f}) >= prod ({prod_f1:.4f}) - ε ({config.PROMOTE_EPSILON})")
+        print(f"\n[OK] PROMOTE: candidate ({cand_f1:.4f}) >= prod ({prod_f1:.4f}) - eps ({config.PROMOTE_EPSILON})")
 
         # Save + register candidate
         save_model(cand_net)
@@ -214,7 +214,7 @@ def main() -> int:
     else:
         action = "rollback"
         new_version = None
-        print(f"\n✗ ROLLBACK: candidate ({cand_f1:.4f}) < prod ({prod_f1:.4f}) - ε ({config.PROMOTE_EPSILON})")
+        print(f"\n[FAIL] ROLLBACK: candidate ({cand_f1:.4f}) < prod ({prod_f1:.4f}) - eps ({config.PROMOTE_EPSILON})")
         print("  Keeping incumbent production model.")
 
     # ── Record decision ─────────────────────────────────────────────────────
@@ -235,7 +235,7 @@ def main() -> int:
     (config.ARTIFACT_DIR / "retraining_decision.json").write_text(
         json.dumps(decision, indent=2)
     )
-    print(f"\n✓ Decision recorded: {action}")
+    print(f"\n[OK] Decision recorded: {action}")
 
     return 0
 

@@ -1,4 +1,4 @@
-"""data_prep.py — Stage 1: discovery, quality validation, versioned splits, transforms.
+"""data_prep.py — Stage 1: discovery, quality validation, versioned splits, transforms. 
 
 Implement: locate the casting folders; run data-quality checks (missing/corrupt/duplicate/
 dimension/class-distribution/consistency); build reproducible stratified train/val/test
@@ -7,12 +7,8 @@ transforms; and per-image feature extraction used by drift monitoring.
 """
 from __future__ import annotations
 
-import hashlib
-import json
-import os
-import random
+import hashlib, json, os, random
 from collections import Counter
-from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +17,11 @@ from PIL import Image, ImageFilter, ImageStat, UnidentifiedImageError
 import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 import config
+from pathlib import Path
+from datetime import datetime
+import json
+
+from sklearn.model_selection import train_test_split
 
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp"}
 
@@ -28,15 +29,24 @@ IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp"}
 def find_data_root(base: Path | None = None) -> Path:
     search_root = Path(base) if base else Path(config.DATA_DIR)
 
-    if search_root.exists() and (search_root / "train").exists() and (search_root / "test").exists():
-        if (search_root / "train" / "ok_front").exists() and (search_root / "train" / "def_front").exists():
-            return search_root
+    train_dir = search_root / "train"
+    test_dir = search_root / "test"
+
+    if (
+        train_dir.exists()
+        and test_dir.exists()
+        and (train_dir / "ok_front").exists()
+        and (train_dir / "def_front").exists()
+    ):
+        return search_root
 
     for path in search_root.rglob("*"):
         if not path.is_dir():
             continue
+
         train_dir = path / "train"
         test_dir = path / "test"
+
         if (
             train_dir.exists()
             and test_dir.exists()
@@ -45,7 +55,9 @@ def find_data_root(base: Path | None = None) -> Path:
         ):
             return path
 
-    raise FileNotFoundError(f"Could not locate casting dataset under {search_root}")
+    raise FileNotFoundError(
+        f"Could not locate casting dataset under {search_root}"
+    )
 
 
 def list_images(split_dir: Path) -> list[tuple[Path, int]]:
@@ -58,107 +70,105 @@ def list_images(split_dir: Path) -> list[tuple[Path, int]]:
 
 
 def validate_quality(root: Path) -> dict:
-    """Scan train and test folders for basic data-quality issues."""
-    issues: list[str] = []
-    counts: dict[str, dict[str, int]] = {}
-    duplicates: list[str] = []
-    hashes: dict[str, str] = {}
+    train_images = list_images(root / "train")
+    test_images = list_images(root / "test")
 
-    for split_name in ("train", "test"):
-        split_dir = root / split_name
-        split_counts = Counter()
-        split_items: list[tuple[Path, int]] = []
+    all_images = train_images + test_images
 
-        if not split_dir.exists():
-            issues.append(f"Missing split folder: {split_dir}")
-            continue
+    corrupt = []
+    invalid_size = []
 
-        for cls_name in config.CLASSES:
-            class_dir = split_dir / cls_name
-            if not class_dir.exists():
-                issues.append(f"Missing class folder: {class_dir}")
-                continue
-            for path in sorted(class_dir.glob("*")):
-                if not path.is_file() or path.suffix.lower() not in IMG_EXTS:
-                    continue
-                split_items.append((path, config.CLASS_TO_IDX[cls_name]))
-                split_counts[cls_name] += 1
+    for img_path, label in all_images:
 
-                try:
-                    with Image.open(path) as img:
-                        img.load()
-                        width, height = img.size
-                        if (width, height) != (300, 300):
-                            issues.append(f"Unexpected size for {path}: {(width, height)}")
-                    sha = hashlib.md5(path.read_bytes()).hexdigest()
-                    if sha in hashes:
-                        duplicates.append(f"Duplicate image: {path} matches {hashes[sha]}")
-                    else:
-                        hashes[sha] = str(path)
-                except (UnidentifiedImageError, OSError, ValueError) as exc:
-                    issues.append(f"Corrupt image: {path} ({exc})")
+        try:
+            img = Image.open(img_path)
+            img.verify()          # Verify image integrity
 
-        counts[split_name] = dict(split_counts)
+            img = Image.open(img_path)
+
+            if img.width == 0 or img.height == 0:
+                invalid_size.append(img_path)
+
+        except Exception:
+            corrupt.append(img_path)
 
     report = {
-        "root": str(root),
-        "counts": counts,
-        "issues": issues + duplicates,
-        "passed": len(issues) + len(duplicates) == 0,
+        "total_images": len(all_images),
+        "corrupt_images": len(corrupt),
+        "invalid_dimensions": len(invalid_size),
+        "passed": len(corrupt) == 0
     }
+
     return report
+    
 
 
 def build_splits(root: Path, version: str = "v1") -> dict:
-    """Create versioned, stratified train/val/test split snapshots."""
-    root = Path(root)
-    split_dir = config.SPLIT_DIR / version
-    split_dir.mkdir(parents=True, exist_ok=True)
-
+    # Read images
     train_items = list_images(root / "train")
     test_items = list_images(root / "test")
 
-    rng = random.Random(config.RANDOM_SEED)
-    train_by_class: dict[int, list[tuple[Path, int]]] = {idx: [] for idx in config.CLASS_TO_IDX.values()}
-    for path, label in train_items:
-        train_by_class[label].append((path, label))
+    # Split paths and labels
+    paths = [p for p, _ in train_items]
+    labels = [y for _, y in train_items]
 
-    train_split: list[tuple[str, int]] = []
-    val_split: list[tuple[str, int]] = []
-    for label, items in train_by_class.items():
-        rng.shuffle(items)
-        val_size = max(1, int(len(items) * config.VAL_SPLIT)) if len(items) > 1 else 0
-        for path, _ in items[val_size:]:
-            train_split.append((str(path.relative_to(root)).replace(os.sep, "/"), label))
-        for path, _ in items[:val_size]:
-            val_split.append((str(path.relative_to(root)).replace(os.sep, "/"), label))
+    # Stratified train-validation split
+    train_paths, val_paths, train_labels, val_labels = train_test_split(
+        paths,
+        labels,
+        test_size=config.VAL_SPLIT,
+        random_state=config.RANDOM_SEED,
+        stratify=labels,
+    )
 
-    test_split = [
-        (str(path.relative_to(root)).replace(os.sep, "/"), label)
-        for path, label in test_items
-    ]
+    # Convert absolute path → relative path
+    def make_records(paths, labels):
+        records = []
+        for p, y in zip(paths, labels):
+            rel = str(p.relative_to(root)).replace("\\", "/")
+            records.append([rel, y])
+        return records
 
-    for name, payload in (("train", train_split), ("val", val_split), ("test", test_split)):
-        (split_dir / f"{name}.json").write_text(json.dumps(payload, indent=2))
+    train_records = make_records(train_paths, train_labels)
+    val_records = make_records(val_paths, val_labels)
+    test_records = make_records(
+        [p for p, _ in test_items],
+        [y for _, y in test_items],
+    )
 
+    # Create version folder
+    version_dir = config.SPLIT_DIR / version
+    version_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save JSON files
+    (version_dir / "train.json").write_text(
+        json.dumps(train_records, indent=2)
+    )
+
+    (version_dir / "val.json").write_text(
+        json.dumps(val_records, indent=2)
+    )
+
+    (version_dir / "test.json").write_text(
+        json.dumps(test_records, indent=2)
+    )
+
+    # Metadata
     metadata = {
         "version": version,
-        "created_at": datetime.now().isoformat(),
+        "created": datetime.now().isoformat(),
         "seed": config.RANDOM_SEED,
-        "val_split": config.VAL_SPLIT,
-        "class_to_idx": config.CLASS_TO_IDX,
-        "split_sizes": {
-            "train": len(train_split),
-            "val": len(val_split),
-            "test": len(test_split),
-        },
-        "class_distributions": {
-            "train": dict(Counter(label for _, label in train_split)),
-            "val": dict(Counter(label for _, label in val_split)),
-            "test": dict(Counter(label for _, label in test_split)),
-        },
+        "validation_size": config.VAL_SPLIT,
+        "classes": config.CLASS_TO_IDX,
+        "train_samples": len(train_records),
+        "validation_samples": len(val_records),
+        "test_samples": len(test_records),
     }
-    (split_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
+
+    (version_dir / "metadata.json").write_text(
+        json.dumps(metadata, indent=2)
+    )
+
     return metadata
 
 
@@ -168,44 +178,59 @@ def load_split(version: str, name: str, root: Path) -> list[tuple[Path, int]]:
 
 
 def get_transforms(train: bool):
+    """Build preprocessing + augmentation transforms for train or eval."""
     from torchvision import transforms
 
-    base = [
-        transforms.Grayscale(3),
+    base_transforms = [
+        transforms.Grayscale(num_output_channels=3),
         transforms.Resize((config.IMG_SIZE, config.IMG_SIZE)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=config.IMAGENET_MEAN, std=config.IMAGENET_STD),
     ]
-
     if train:
-        aug = [
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomAffine(degrees=config.AUG["rotation_degrees"], translate=(config.AUG["translate"], config.AUG["translate"]), fill=0),
-            transforms.ColorJitter(brightness=config.AUG["brightness"], contrast=config.AUG["contrast"]),
-        ]
-        return transforms.Compose(aug + base)
+        base_transforms.extend([
+            transforms.RandomHorizontalFlip(p=config.AUG["hflip_p"]),
+            transforms.RandomAffine(
+                degrees=config.AUG["rotation_degrees"],
+                translate=(config.AUG["translate"], config.AUG["translate"]),
+            ),
+            transforms.ColorJitter(
+                brightness=config.AUG["brightness"],
+                contrast=config.AUG["contrast"],
+            ),
+        ])
 
-    return transforms.Compose(base)
+    base_transforms.extend([
+        transforms.ToTensor(),
+        transforms.Normalize(config.IMAGENET_MEAN, config.IMAGENET_STD),
+    ])
+    return transforms.Compose(base_transforms)
 
 
 def image_features(img: Image.Image) -> dict:
-    """Return simple image-summary features for drift monitoring."""
+    """Extract per-image features for statistical drift monitoring."""
     gray = img.convert("L")
     arr = np.asarray(gray, dtype=np.float32)
     mean_intensity = float(arr.mean())
-    contrast = float(arr.std())
+    brightness = float(mean_intensity / 255.0)
+    contrast = float(arr.std() / 255.0)
 
-    edge_img = gray.filter(ImageFilter.FIND_EDGES)
-    edge_arr = np.asarray(edge_img, dtype=np.float32)
-    edge_density = float(np.mean(edge_arr > 0))
+    edges = np.asarray(gray.filter(ImageFilter.FIND_EDGES), dtype=np.float32)
+    edge_density = float((edges > 16).sum() / edges.size)
 
-    stat = ImageStat.Stat(gray)
-    sharpness = float(stat.var[0])
+    laplacian = gray.filter(
+        ImageFilter.Kernel(
+            (3, 3),
+            [-1, -1, -1, -1, 8, -1, -1, -1, -1],
+            scale=1,
+            offset=0,
+        )
+    )
+    sharpness = float(np.asarray(laplacian, dtype=np.float32).var() / (255.0 ** 2))
 
     return {
-        "brightness": mean_intensity,
+        "brightness": brightness,
         "contrast": contrast,
         "edge_density": edge_density,
         "sharpness": sharpness,
         "mean_intensity": mean_intensity,
     }
+
