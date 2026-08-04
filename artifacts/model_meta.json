@@ -1,0 +1,30 @@
+{
+  "run_id": "3bff495b513741e69f15389d91c8d59c",
+  "backbone": "resnet18",
+  "freeze_backbone": true,
+  "epochs_trained": 4,
+  "best_val_f1": 0.9646418857660924,
+  "test_metrics": {
+    "accuracy": 0.9286713286713286,
+    "precision_defect": 0.9785714285714285,
+    "recall_defect": 0.9072847682119205,
+    "f1_defect": 0.9415807560137457,
+    "macro_f1": 0.9250094085275191,
+    "roc_auc": 0.9822894022883913,
+    "confusion_matrix": [
+      [
+        253,
+        9
+      ],
+      [
+        42,
+        411
+      ]
+    ]
+  },
+  "total_params": 11177538,
+  "trainable_params": 1026,
+  "version": 5,
+  "retrained": true,
+  "drifted_f1": 0.8464163822525598
+}
